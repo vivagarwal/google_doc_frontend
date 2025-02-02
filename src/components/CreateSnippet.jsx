@@ -1,18 +1,14 @@
 import { useState } from "react";
 
-function PasteForm() {
+function CreateSnippet() {
   const [content, setContent] = useState("");
-  const [expiration, setExpiration] = useState("");
-  const [accessLimit, setAccessLimit] = useState(1);
   const [showCopyNotification, setShowCopyNotification] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     const payload = {
-      content,
-      expirationTime: expiration ? `${expiration}T23:59:59` : null,
-      accessLimit: accessLimit,
+      content
     };
 
     const baseUrl = import.meta.env.VITE_BASE_URL;
@@ -31,11 +27,11 @@ function PasteForm() {
         const frontendLink = `${frontendUrl}/view/${result.uniqueLink}`;
         handleCopy(frontendLink);
       } else {
-        alert("Failed to create paste. Please try again.");
+        alert("Failed to create doc. Please try again.");
       }
     } catch (error) {
-      console.error("Error creating paste:", error);
-      alert("An error occurred while creating the paste.");
+      console.error("Error creating doc:", error);
+      alert("An error occurred while creating the doc.");
     }
   };
 
@@ -54,7 +50,7 @@ function PasteForm() {
       <form onSubmit={handleSubmit}>
         <div className="mb-5">
           <label htmlFor="content" className="block text-gray-700 font-medium mb-2">
-            Snippet Content
+            Collab Doc
           </label>
           <textarea
             id="content"
@@ -66,38 +62,11 @@ function PasteForm() {
           />
         </div>
 
-        <div className="mb-5">
-          <label htmlFor="expiration" className="block text-gray-700 font-medium mb-2">
-            Expiration Date (optional)
-          </label>
-          <input
-            type="date"
-            id="expiration"
-            value={expiration}
-            onChange={(e) => setExpiration(e.target.value)}
-            className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-        </div>
-
-        <div className="mb-5">
-          <label htmlFor="accessLimit" className="block text-gray-700 font-medium mb-2">
-            Access Limit
-          </label>
-          <input
-            type="number"
-            id="accessLimit"
-            value={accessLimit}
-            onChange={(e) => setAccessLimit(e.target.value)}
-            min="1"
-            className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-        </div>
-
         <button
           type="submit"
           className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2 px-4 rounded-md hover:shadow-lg hover:from-blue-700 hover:to-blue-600 transition-all duration-300"
         >
-          Create Snippet
+          Create CollabDoc
         </button>
       </form>
 
@@ -110,4 +79,4 @@ function PasteForm() {
   );
 }
 
-export default PasteForm;
+export default CreateSnippet;
