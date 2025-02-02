@@ -9,14 +9,14 @@ function ViewSnippet() {
   const [stompClient, setStompClient] = useState(null);  // WebSocket client
   const [isEditing, setIsEditing] = useState(false);  // Edit mode toggle
 
-  console.log("[Info] Backend URL:", import.meta.env.VITE_BASE_URL);
+  console.log("Backend URL in production:", import.meta.env.VITE_BASE_URL);
 
   // Fetch snippet content from the server initially
   useEffect(() => {
+    console.log("Backend URL in production line 1:", import.meta.env.VITE_BASE_URL);
     const fetchSnippet = async () => {
       try {
         const baseUrl = import.meta.env.VITE_BASE_URL;
-        console.log("[API Request] Fetching snippet:", `${baseUrl}/api/snippets/view/${uniqueLink}`);
         const res = await fetch(`${baseUrl}/api/snippets/view/${uniqueLink}`);
 
         if (!res.ok) {
@@ -24,10 +24,9 @@ function ViewSnippet() {
         }
 
         const data = await res.json();
-        console.log("[API Response] Snippet fetched:", data.content);
         setSnippetData(data.content);
       } catch (err) {
-        console.error("[Error] Fetching snippet failed:", err.message);
+        console.error("Error fetching snippet:", err.message);
       }
     };
 
@@ -36,8 +35,7 @@ function ViewSnippet() {
 
   // WebSocket setup and cleanup
   useEffect(() => {
-    console.log("[WebSocket] Initializing connection");
-
+    console.log("[WebSocket] Initializing WebSocket connection");
     const socket = new SockJS(`${import.meta.env.VITE_BASE_URL}/ws/edit`);
     const client = new Stomp({
       webSocketFactory: () => socket,
@@ -45,73 +43,50 @@ function ViewSnippet() {
     });
 
     client.onConnect = () => {
-      console.log("[WebSocket] Connected");
-      setStompClient(client);
+      console.log("[WebSocket] WebSocket connected");
+      setStompClient(client);  // Set the connected client here
 
       // Subscribe to the topic and log incoming messages
       client.subscribe(`/topic/snippets/${uniqueLink}`, (message) => {
         const newContent = message.body;
-        console.log("[WebSocket] Received update:", newContent);
+        console.log("receive mesaage ",newContent);
         setSnippetData(newContent || "");  // Update with real-time changes
       });
     };
 
     client.activate();  // Activates the WebSocket connection
 
-    const handleBeforeUnload = async () => {
-      console.log("[WebSocket] Saving before window unload");
-      await handleSaveSnippet();  // Ensure changes are saved before closing
-      client.deactivate();
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
     return () => {
-      console.log("[WebSocket] Cleaning up connection");
-      window.removeEventListener("beforeunload", handleBeforeUnload);
+      console.log("[WebSocket] Disconnecting WebSocket");
       client.deactivate();
     };
   }, [uniqueLink]);
 
-  // Auto-save every 5 seconds
-  useEffect(() => {
-    const saveInterval = setInterval(() => {
-      console.log("[Auto-Save] Saving snippet automatically");
-      handleSaveSnippet();
-    }, 5000);  // Save every 5 seconds
-
-    return () => clearInterval(saveInterval);  // Cleanup on unmount
-  }, [snippetData]);
-
   // Toggle edit mode
   const handleEditToggle = () => {
-    console.log("[User Action] Toggling edit mode. Current state:", isEditing ? "Editing" : "Viewing");
     setIsEditing(!isEditing);
   };
 
   // Handle content change and broadcast the updates
   const handleContentChange = (e) => {
     const updatedContent = e.target.value;
-    console.log("[User Action] User updated snippet content:", updatedContent);
     setSnippetData(updatedContent);
 
     if (stompClient && stompClient.connected) {
-      console.log("[WebSocket] Sending update:", updatedContent);
+      console.log("send message : ", updatedContent);
       stompClient.publish({
         destination: `/app/snippets/edit/${uniqueLink}`,
         body: updatedContent,
       });
     } else {
-      console.error("[WebSocket Error] STOMP client not connected");
+      console.error(`[WebSocket Error] Unable to send message. STOMP client not connected.`);
     }
   };
 
-  // Save updated snippet to the backend
+  // **Save updated snippet to the backend**
   const handleSaveSnippet = async () => {
     try {
       const baseUrl = import.meta.env.VITE_BASE_URL;
-      console.log("[API Request] Saving snippet to:", `${baseUrl}/api/snippets/update/${uniqueLink}`);
-      
       const response = await fetch(`${baseUrl}/api/snippets/update/${uniqueLink}`, {
         method: 'PUT',
         headers: {
@@ -124,10 +99,10 @@ function ViewSnippet() {
         throw new Error("Failed to save the snippet.");
       }
 
-      console.log("[API Response] Snippet saved successfully");
+      console.log("Snippet saved successfully.");
       setIsEditing(false);  // Exit editing mode
     } catch (err) {
-      console.error("[Error] Saving snippet failed:", err.message);
+      console.error("Error saving snippet:", err.message);
     }
   };
 
