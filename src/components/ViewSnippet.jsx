@@ -9,8 +9,11 @@ function ViewSnippet() {
   const [stompClient, setStompClient] = useState(null);  // WebSocket client
   const [isEditing, setIsEditing] = useState(false);  // Edit mode toggle
 
+  console.log("Backend URL in production:", import.meta.env.VITE_BASE_URL);
+
   // Fetch snippet content from the server initially
   useEffect(() => {
+    console.log("Backend URL in production line 1:", import.meta.env.VITE_BASE_URL);
     const fetchSnippet = async () => {
       try {
         const baseUrl = import.meta.env.VITE_BASE_URL;
