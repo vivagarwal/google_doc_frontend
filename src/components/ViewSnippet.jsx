@@ -3,13 +3,11 @@ import { useParams } from "react-router-dom";
 import { Client as Stomp } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
-
 function ViewSnippet() {
-  const { uniqueLink } = useParams(); // Retrieve unique link from URL
+  const { uniqueLink } = useParams();  // Retrieve unique link from URL
   const [snippetData, setSnippetData] = useState("");  // Current snippet content
   const [stompClient, setStompClient] = useState(null);  // WebSocket client
   const [isEditing, setIsEditing] = useState(false);  // Edit mode toggle
-  const [isUpdating, setIsUpdating] = useState(false);  // Indicates real-time updates
 
   // Fetch snippet content from the server initially
   useEffect(() => {
@@ -34,24 +32,29 @@ function ViewSnippet() {
 
   // WebSocket setup and cleanup
   useEffect(() => {
+    console.log("[WebSocket] Initializing WebSocket connection");
     const socket = new SockJS(`${import.meta.env.VITE_BASE_URL}/ws/edit`);
     const client = new Stomp({
-      webSocketFactory: () => socket,  // Use SockJS as WebSocket factory
-      debug: (str) => console.log(str), // Optional for debugging
+      webSocketFactory: () => socket,
+      debug: (str) => console.log(`[STOMP Debug] ${str}`),
     });
-  
+
     client.onConnect = () => {
-      console.log("WebSocket connected");
-  
+      console.log("[WebSocket] WebSocket connected");
+      setStompClient(client);  // Set the connected client here
+
+      // Subscribe to the topic and log incoming messages
       client.subscribe(`/topic/snippets/${uniqueLink}`, (message) => {
-        setSnippetData(message.body);  // Update with real-time changes
+        const newContent = message.body;
+        setSnippetData(newContent || "");  // Update with real-time changes
       });
     };
-  
-    client.activate();  // Activates the connection
-  
+
+    client.activate();  // Activates the WebSocket connection
+
     return () => {
-      client.deactivate();  // Disconnect on component unmount
+      console.log("[WebSocket] Disconnecting WebSocket");
+      client.deactivate();
     };
   }, [uniqueLink]);
 
@@ -66,20 +69,41 @@ function ViewSnippet() {
     setSnippetData(updatedContent);
 
     if (stompClient && stompClient.connected) {
-      // Send updated content to the server for broadcasting
-      stompClient.send(`app/snippets/edit/${uniqueLink}`, {}, updatedContent);
+      stompClient.publish({
+        destination: `/app/snippets/edit/${uniqueLink}`,
+        body: updatedContent,
+      });
+    } else {
+      console.error(`[WebSocket Error] Unable to send message. STOMP client not connected.`);
+    }
+  };
+
+  // **Save updated snippet to the backend**
+  const handleSaveSnippet = async () => {
+    try {
+      const baseUrl = import.meta.env.VITE_BASE_URL;
+      const response = await fetch(`${baseUrl}/api/snippets/update/${uniqueLink}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: snippetData }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save the snippet.");
+      }
+
+      console.log("Snippet saved successfully.");
+      setIsEditing(false);  // Exit editing mode
+    } catch (err) {
+      console.error("Error saving snippet:", err.message);
     }
   };
 
   return (
     <div className="max-w-lg mx-auto mt-10 bg-white p-8 shadow-lg rounded-md">
       <h2 className="text-3xl font-bold text-blue-700 mb-4">Snippet Editor</h2>
-
-      {isUpdating && (
-        <div className="bg-yellow-100 text-yellow-700 p-2 mb-2 rounded-md">
-          🔄 Updating with real-time changes...
-        </div>
-      )}
 
       {!isEditing ? (
         <>
@@ -102,7 +126,7 @@ function ViewSnippet() {
             placeholder="Edit your snippet here..."
           />
           <button
-            onClick={handleEditToggle}
+            onClick={handleSaveSnippet}  // Save on click
             className="mt-4 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
           >
             Save and Exit Editing
