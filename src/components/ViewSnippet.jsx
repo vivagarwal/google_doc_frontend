@@ -49,6 +49,7 @@ function ViewSnippet() {
       // Subscribe to the topic and log incoming messages
       client.subscribe(`/topic/snippets/${uniqueLink}`, (message) => {
         const newContent = message.body;
+        console.log("receive mesaage ",newContent);
         setSnippetData(newContent || "");  // Update with real-time changes
       });
     };
@@ -72,6 +73,7 @@ function ViewSnippet() {
     setSnippetData(updatedContent);
 
     if (stompClient && stompClient.connected) {
+      console.log("send message : ", updatedContent);
       stompClient.publish({
         destination: `/app/snippets/edit/${uniqueLink}`,
         body: updatedContent,
