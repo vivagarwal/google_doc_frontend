@@ -13,8 +13,6 @@ function ViewSnippet() {
   const [isEditing, setIsEditing] = useState(false);  // Edit mode toggle
   const dmp = new DiffMatchPatch();
 
-  // console.log("Backend URL in production:", import.meta.env.VITE_BASE_URL);
-
   // Fetch snippet content from the server initially
   useEffect(() => {
     console.log("Backend URL in production line 1:", import.meta.env.VITE_BASE_URL);
@@ -59,15 +57,25 @@ function ViewSnippet() {
           return;
         }
 
-        console.log("[RECEIVE] Delta:", edit.contentDelta, "Position:", edit.cursorPosition);
+        console.log("[RECEIVE]", edit.deleteOperation ? "Delete" : "Insert", "Delta:", edit.contentDelta, "Position:", edit.cursorPosition);
         setSnippetData((snippetData) => {
           console.log("Previous content:", snippetData);
-          const updatedContent = [
+          let updatedContent;
+          if (edit.deleteOperation) {
+            // Handle deletion by removing characters starting from cursorPosition
+            updatedContent = [
+              snippetData.slice(0, edit.cursorPosition),
+              snippetData.slice(edit.cursorPosition + edit.contentDelta.length)
+            ].join('');
+            console.log("New content after deletion:", updatedContent);
+          }else{
+          updatedContent = [
             snippetData.slice(0, edit.cursorPosition),
             edit.contentDelta,
             snippetData.slice(edit.cursorPosition)
           ].join('');
-          console.log("New content after applying delta:", updatedContent);
+          console.log("New content after inserting delta:", updatedContent);
+        }
           return updatedContent;
         });
         });
@@ -97,14 +105,18 @@ function ViewSnippet() {
 
     // Extract the actual inserted delta
     let delta = '';
+    let deleteOperation = false;
     diffs.forEach(([op, text]) => {
       if (op === 1) {  // Insert operation
         delta += text;
+      }else if(op == -1){
+        delta+=text;
+        deleteOperation=true;
       }
       });
 
       if (delta.length > 0) {
-        console.log("[SEND] Delta:", delta, "Position:", currentCursorPosition);
+        console.log(deleteOperation ? "[SEND DELETE]" : "[SEND INSERT]", "Delta:", delta, "Position:", currentCursorPosition);
         console.log("Updated content:", updatedContent);
         
         if (stompClient && stompClient.connected) {
@@ -113,7 +125,8 @@ function ViewSnippet() {
             body: JSON.stringify({
               contentDelta: delta,
               cursorPosition: currentCursorPosition,
-              sessionId: sessionId,  // Attach session ID to the delta
+              sessionId: sessionId,
+              deleteOperation: deleteOperation,
             }),
           });
         }else {
