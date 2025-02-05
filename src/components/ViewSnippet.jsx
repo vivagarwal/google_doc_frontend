@@ -2,14 +2,18 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Client as Stomp } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
+import DiffMatchPatch from 'diff-match-patch';
+
+const sessionId = crypto.randomUUID();
 
 function ViewSnippet() {
   const { uniqueLink } = useParams();  // Retrieve unique link from URL
   const [snippetData, setSnippetData] = useState("");  // Current snippet content
   const [stompClient, setStompClient] = useState(null);  // WebSocket client
   const [isEditing, setIsEditing] = useState(false);  // Edit mode toggle
+  const dmp = new DiffMatchPatch();
 
-  console.log("Backend URL in production:", import.meta.env.VITE_BASE_URL);
+  // console.log("Backend URL in production:", import.meta.env.VITE_BASE_URL);
 
   // Fetch snippet content from the server initially
   useEffect(() => {
@@ -47,11 +51,26 @@ function ViewSnippet() {
       setStompClient(client);  // Set the connected client here
 
       // Subscribe to the topic and log incoming messages
-      client.subscribe(`/topic/snippets/${uniqueLink}`, (message) => {
-        const newContent = message.body;
-        console.log("receive mesaage ",newContent);
-        setSnippetData(newContent || "");  // Update with real-time changes
-      });
+      client.subscribe(`/topic/snippets-delta/${uniqueLink}`, (message) => {
+        const edit = JSON.parse(message.body);
+
+        if (edit.sessionId === sessionId) {
+          console.log("Ignoring delta from this session:", edit.contentDelta);
+          return;
+        }
+
+        console.log("[RECEIVE] Delta:", edit.contentDelta, "Position:", edit.cursorPosition);
+        setSnippetData((snippetData) => {
+          console.log("Previous content:", snippetData);
+          const updatedContent = [
+            snippetData.slice(0, edit.cursorPosition),
+            edit.contentDelta,
+            snippetData.slice(edit.cursorPosition)
+          ].join('');
+          console.log("New content after applying delta:", updatedContent);
+          return updatedContent;
+        });
+        });
     };
 
     client.activate();  // Activates the WebSocket connection
@@ -70,17 +89,38 @@ function ViewSnippet() {
   // Handle content change and broadcast the updates
   const handleContentChange = (e) => {
     const updatedContent = e.target.value;
-    setSnippetData(updatedContent);
+    const currentCursorPosition = e.target.selectionStart;
 
-    if (stompClient && stompClient.connected) {
-      console.log("send message : ", updatedContent);
-      stompClient.publish({
-        destination: `/app/snippets/edit/${uniqueLink}`,
-        body: updatedContent,
+    // Calculate the diff between previous and updated content
+    const diffs = dmp.diff_main(snippetData, updatedContent);
+    dmp.diff_cleanupSemantic(diffs);
+
+    // Extract the actual inserted delta
+    let delta = '';
+    diffs.forEach(([op, text]) => {
+      if (op === 1) {  // Insert operation
+        delta += text;
+      }
       });
-    } else {
-      console.error(`[WebSocket Error] Unable to send message. STOMP client not connected.`);
-    }
+
+      if (delta.length > 0) {
+        console.log("[SEND] Delta:", delta, "Position:", currentCursorPosition);
+        console.log("Updated content:", updatedContent);
+        
+        if (stompClient && stompClient.connected) {
+          stompClient.publish({
+            destination: `/app/snippets/edit-delta/${uniqueLink}`,
+            body: JSON.stringify({
+              contentDelta: delta,
+              cursorPosition: currentCursorPosition,
+              sessionId: sessionId,  // Attach session ID to the delta
+            }),
+          });
+        }else {
+          console.error(`[WebSocket Error] Unable to send message. STOMP client not connected.`);
+      }
+    } 
+    setSnippetData(updatedContent);
   };
 
   // **Save updated snippet to the backend**

@@ -12,6 +12,7 @@
   "dependencies": {
     "@stomp/stompjs": "^7.0.0",
     "@tailwindcss/vite": "^4.0.2",
+    "diff-match-patch": "^1.0.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.1.5",
