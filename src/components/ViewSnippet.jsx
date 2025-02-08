@@ -140,20 +140,11 @@ function ViewSnippet() {
   const handleSaveSnippet = async () => {
     try {
       const baseUrl = import.meta.env.VITE_BASE_URL;
-  
-      // Convert plain text to CRDTCharacter objects
-      const crdtContent = snippetData.split("").map((char, index) => ({
-        value: char,
-        uniqueId: `${Date.now()}_${index}`,
-        isDeleted: false,
-      }));
-  
       const response = await fetch(`${baseUrl}/api/snippets/update/${uniqueLink}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(crdtContent),  // Send the CRDT structure to the backend
       });
   
       if (!response.ok) {
