@@ -41,6 +41,9 @@ function ViewSnippet() {
     const socket = new SockJS(`${import.meta.env.VITE_BASE_URL}/ws/edit`);
     const client = new Stomp({
       webSocketFactory: () => socket,
+      connectHeaders: {
+        uniqueLink: uniqueLink,  // Send the uniqueLink as a header
+      },
       debug: (str) => console.log(`[STOMP Debug] ${str}`),
     });
 
