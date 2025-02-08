@@ -90,26 +90,8 @@ function ViewSnippet() {
   }, [uniqueLink]);
 
   // Toggle edit mode
-  const handleEditToggle = async () => {
-    //setIsEditing(!isEditing);
-    try {
-      const baseUrl = import.meta.env.VITE_BASE_URL;
-      const response = await fetch(`${baseUrl}/api/snippets/edit/${uniqueLink}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-  
-      if (!response.ok) {
-        throw new Error("Some error occured while editing mode entering");
-      }
-  
-      console.log("Edit mode started");
-      setIsEditing(true);  // Enter editing mode
-    } catch (err) {
-      console.error("Error Entering Edit Mode:", err.message);
-    }
+  const handleEditToggle = () => {
+    setIsEditing(!isEditing);
   };
 
   // Handle content change and broadcast the updates
