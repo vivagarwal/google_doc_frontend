@@ -7,12 +7,20 @@ function CreateSnippet() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Initial CRDT content setup
+    const crdtContent = content.split("").map((char, index) => ({
+      value: char,
+      uniqueId: `${Date.now()}_${index}`,
+      isDeleted: false,
+    }));
+
     const payload = {
-      content
+      content: crdtContent
     };
 
     const baseUrl = import.meta.env.VITE_BASE_URL;
     const frontendUrl = window.location.origin;
+
     try {
       const res = await fetch(`${baseUrl}/api/snippets/create`, {
         method: "POST",
@@ -39,10 +47,9 @@ function CreateSnippet() {
     navigator.clipboard.writeText(link);
     setShowCopyNotification(true);
 
-    // Automatically hide the notification after 1 minute
     setTimeout(() => {
       setShowCopyNotification(false);
-    }, 60000); // 1 minute
+    }, 60000);
   };
 
   return (
