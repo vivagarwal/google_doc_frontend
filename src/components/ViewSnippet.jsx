@@ -100,45 +100,48 @@ function ViewSnippet() {
   // Handle content change and broadcast the updates
   const handleContentChange = (e) => {
     const updatedContent = e.target.value;
-    const currentCursorPosition = e.target.selectionStart-1;
+    const cursorPos = e.target.selectionStart; // Capture cursor position
 
     // Calculate the diff between previous and updated content
     const diffs = dmp.diff_main(snippetData, updatedContent);
     dmp.diff_cleanupSemantic(diffs);
 
-    // Extract the actual inserted delta
     let delta = '';
     let deleteOperation = false;
-    diffs.forEach(([op, text]) => {
-      if (op === 1) {  // Insert operation
-        delta += text;
-      }else if(op == -1){
-        delta+=text;
-        deleteOperation=true;
-      }
-      });
+    let adjustedCursorPos = cursorPos; // Default cursor position
 
-      if (delta.length > 0) {
-        console.log(deleteOperation ? "[SEND DELETE]" : "[SEND INSERT]", "Delta:", delta, "Position:", currentCursorPosition);
+    diffs.forEach(([op, text]) => {
+        if (op === 1) {  // Insert operation
+            delta += text;
+            adjustedCursorPos = cursorPos - 1; // Fix insert position
+        } else if (op === -1) { // Delete operation
+            delta += text;
+            deleteOperation = true;
+            adjustedCursorPos = cursorPos; // Fix delete position (no -1)
+        }
+    });
+
+    if (delta.length > 0) {
+        console.log(deleteOperation ? "[SEND DELETE]" : "[SEND INSERT]", "Delta:", delta, "Position:", adjustedCursorPos);
         console.log("Updated content:", updatedContent);
         
         if (stompClient && stompClient.connected) {
-          stompClient.publish({
-            destination: `/app/snippets/edit-delta/${uniqueLink}`,
-            body: JSON.stringify({
-              contentDelta: delta,
-              cursorPosition: currentCursorPosition,
-              sessionId: sessionId,
-              deleteOperation: deleteOperation,
-            }),
-          });
-        }else {
-          console.error(`[WebSocket Error] Unable to send message. STOMP client not connected.`);
-      }
-    } 
-    setSnippetData(updatedContent);
-  };
+            stompClient.publish({
+                destination: `/app/snippets/edit-delta/${uniqueLink}`,
+                body: JSON.stringify({
+                    contentDelta: delta,
+                    cursorPosition: adjustedCursorPos, // Corrected cursor position
+                    sessionId: sessionId,
+                    deleteOperation: deleteOperation,
+                }),
+            });
+        } else {
+            console.error(`[WebSocket Error] Unable to send message. STOMP client not connected.`);
+        }
+    }
 
+    setSnippetData(updatedContent);
+};
   // **Save updated snippet to the backend**
   const handleSaveSnippet = async () => {
     try {
