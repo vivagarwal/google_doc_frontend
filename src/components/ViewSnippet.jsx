@@ -100,7 +100,7 @@ function ViewSnippet() {
   // Handle content change and broadcast the updates
   const handleContentChange = (e) => {
     const updatedContent = e.target.value;
-    const currentCursorPosition = e.target.selectionStart;
+    const currentCursorPosition = e.target.selectionStart-1;
 
     // Calculate the diff between previous and updated content
     const diffs = dmp.diff_main(snippetData, updatedContent);
