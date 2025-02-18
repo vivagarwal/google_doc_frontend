@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Client as Stomp } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
@@ -12,6 +12,8 @@ function ViewSnippet() {
   const [stompClient, setStompClient] = useState(null);  // WebSocket client
   const [isEditing, setIsEditing] = useState(false);  // Edit mode toggle
   const dmp = new DiffMatchPatch();
+  const cursorRef = useRef(0);  // Stores cursor position persistently
+  const textareaRef = useRef(null); // Reference to the textarea
 
   // Fetch snippet content from the server initially
   useEffect(() => {
@@ -35,7 +37,6 @@ function ViewSnippet() {
     fetchSnippet();
   }, [uniqueLink]);
 
-  // WebSocket setup and cleanup
   useEffect(() => {
     console.log("[WebSocket] Initializing WebSocket connection");
     const socket = new SockJS(`${import.meta.env.VITE_BASE_URL}/ws/edit`);
@@ -49,42 +50,53 @@ function ViewSnippet() {
 
     client.onConnect = () => {
       console.log("[WebSocket] WebSocket connected");
-      setStompClient(client);  // Set the connected client here
+      setStompClient(client);
 
-      // Subscribe to the topic and log incoming messages
       client.subscribe(`/topic/snippets-delta/${uniqueLink}`, (message) => {
         const edit = JSON.parse(message.body);
-
+    
         if (edit.sessionId === sessionId) {
-          console.log("Ignoring delta from this session:", edit.contentDelta);
-          return;
+            console.log("Ignoring delta from this session:", edit.contentDelta);
+            return;
         }
-
+    
         console.log("[RECEIVE]", edit.deleteOperation ? "Delete" : "Insert", "Delta:", edit.contentDelta, "Position:", edit.cursorPosition);
-        setSnippetData((snippetData) => {
-          console.log("Previous content:", snippetData);
-          let updatedContent;
-          if (edit.deleteOperation) {
-            // Handle deletion by removing characters starting from cursorPosition
-            updatedContent = [
-              snippetData.slice(0, edit.cursorPosition),
-              snippetData.slice(edit.cursorPosition + edit.contentDelta.length)
-            ].join('');
-            console.log("New content after deletion:", updatedContent);
-          }else{
-          updatedContent = [
-            snippetData.slice(0, edit.cursorPosition),
-            edit.contentDelta,
-            snippetData.slice(edit.cursorPosition)
-          ].join('');
-          console.log("New content after inserting delta:", updatedContent);
-        }
-          return updatedContent;
+    
+        setSnippetData((prevSnippet) => {
+            const textarea = textareaRef.current;
+            let prevCursorPos = textarea ? textarea.selectionStart : cursorRef.current;
+    
+            let updatedContent;
+            if (edit.deleteOperation) {
+                updatedContent = prevSnippet.slice(0, edit.cursorPosition) + prevSnippet.slice(edit.cursorPosition + edit.contentDelta.length);
+            } else {
+                updatedContent = prevSnippet.slice(0, edit.cursorPosition) + edit.contentDelta + prevSnippet.slice(edit.cursorPosition);
+            }
+    
+            // Adjust cursor position correctly
+            if (edit.deleteOperation) {
+                if (edit.cursorPosition < prevCursorPos) {
+                    prevCursorPos -= edit.contentDelta.length;
+                }
+            } else {
+                if (edit.cursorPosition <= prevCursorPos) {
+                    prevCursorPos += edit.contentDelta.length;
+                }
+            }
+    
+            cursorRef.current = Math.max(0, prevCursorPos);
+    
+            setTimeout(() => {
+                if (textarea) textarea.setSelectionRange(cursorRef.current, cursorRef.current);
+            }, 0);
+    
+            return updatedContent;
         });
-        });
+    });
+    
     };
 
-    client.activate();  // Activates the WebSocket connection
+    client.activate();
 
     return () => {
       console.log("[WebSocket] Disconnecting WebSocket");
@@ -101,7 +113,8 @@ function ViewSnippet() {
   const handleContentChange = (e) => {
     const updatedContent = e.target.value;
     const cursorPos = e.target.selectionStart; // Capture cursor position
-
+    cursorRef.current = cursorPos;  // Store cursor position before updating state
+    console.log(cursorRef);
     // Calculate the diff between previous and updated content
     const diffs = dmp.diff_main(snippetData, updatedContent);
     dmp.diff_cleanupSemantic(diffs);
@@ -117,7 +130,7 @@ function ViewSnippet() {
         } else if (op === -1) { // Delete operation
             delta += text;
             deleteOperation = true;
-            adjustedCursorPos = cursorPos; // Fix delete position (no -1)
+            adjustedCursorPos = cursorPos; // Fix delete position
         }
     });
 
@@ -142,6 +155,7 @@ function ViewSnippet() {
 
     setSnippetData(updatedContent);
 };
+  
   // **Save updated snippet to the backend**
   const handleSaveSnippet = async () => {
     try {
@@ -183,6 +197,7 @@ function ViewSnippet() {
       ) : (
         <>
           <textarea
+            ref={textareaRef} // Attach ref to the textarea
             value={snippetData}
             onChange={handleContentChange}
             className="w-full h-40 p-3 border border-gray-300 rounded-md"
