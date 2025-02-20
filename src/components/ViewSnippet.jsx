@@ -15,6 +15,27 @@ function ViewSnippet() {
   const cursorRef = useRef({ line: 0, column: 0 }); // Stores cursor position persistently
   const textareaRef = useRef(null); // Reference to the textarea
 
+  // Helper to convert snippetData (2D) -> single string
+  const snippetToString = (snippet) => {
+    return snippet.map(lineArr => lineArr.join("")).join("\n");
+  };
+
+  // Helper to convert single string -> snippetData (2D)
+  const stringToSnippet = (text) => {
+    return text.split("\n").map(line => [...line]);
+  };
+
+  // Helper to find the 1D offset in "fullText" that corresponds to (edit.lineNumber, edit.columnNumber)
+  const computeOffset = (snippet, lineNumber, columnNumber) => {
+    let offset = 0;
+    for (let i = 0; i < lineNumber && i < snippet.length; i++) {
+      offset += snippet[i].length;
+      offset += 1; // for the newline
+    }
+    offset += columnNumber;
+    return offset;
+  };
+
   // Fetch snippet content from the server initially
   useEffect(() => {
     console.log("Backend URL in production line 1:", import.meta.env.VITE_BASE_URL);
@@ -54,39 +75,78 @@ function ViewSnippet() {
       console.log("[WebSocket] WebSocket connected");
       setStompClient(client);
 
+      // --------- ONLY SUBSCRIPTION LOGIC -----------
       client.subscribe(`/topic/snippets-delta/${uniqueLink}`, (message) => {
         const edit = JSON.parse(message.body);
     
         if (edit.sessionId === sessionId) {
-            console.log("Ignoring delta from this session:", edit.contentDelta);
-            return;
+          console.log("Ignoring delta from this session:", edit.contentDelta);
+          return;
         }
     
-        console.log("[RECEIVE]", edit.deleteOperation ? "Delete" : "Insert", "Delta:", edit.contentDelta, "Line:", edit.lineNumber, 
-                        "Column:", edit.columnNumber);
-    
+        console.log("[RECEIVE]", edit.deleteOperation ? "Delete" : "Insert", 
+                    "Delta:", edit.contentDelta, "Line:", edit.lineNumber, 
+                    "Column:", edit.columnNumber);
+        
         setSnippetData((prevSnippet) => {
+          // Convert old snippet -> string
+          const oldString = snippetToString(prevSnippet);
 
-          let updatedSnippet = [...prevSnippet];
-          // Ensure line exists before modifying it
-          while (updatedSnippet.length <= edit.lineNumber) {
-            updatedSnippet.push([]);
+          // If the user has a selection, get the old cursor offset
+          // Otherwise default to 0
+          let oldCursorPos = 0;
+          if (textareaRef.current) {
+            oldCursorPos = textareaRef.current.selectionStart;
           }
-          let lineText = updatedSnippet[edit.lineNumber];
 
+          // Where does this remote edit happen (in 1D) ?
+          const editOffset = computeOffset(prevSnippet, edit.lineNumber, edit.columnNumber);
+
+          let newString;
           if (edit.deleteOperation) {
-            let deleteEndIndex = Math.min(edit.columnNumber + edit.contentDelta.length, lineText.length); // Fix: Prevent out-of-bounds delete
-            updatedSnippet[edit.lineNumber] = 
-              [...lineText.slice(0, edit.columnNumber), ...lineText.slice(deleteEndIndex)];
+            // delete 'edit.contentDelta.length' characters starting at editOffset
+            // but clamp to avoid out-of-bounds
+            const deleteCount = Math.min(edit.contentDelta.length, oldString.length - editOffset);
+            newString =
+              oldString.slice(0, editOffset) +
+              oldString.slice(editOffset + deleteCount);
+
+            // If the edit offset is strictly before our cursor, shift cursor left
+            if (editOffset < oldCursorPos) {
+              let shiftAmount = deleteCount;
+              // If oldCursorPos is within the deleted range, clamp it
+              if (oldCursorPos < editOffset + deleteCount) {
+                shiftAmount = oldCursorPos - editOffset;
+              }
+              oldCursorPos = Math.max(editOffset, oldCursorPos - shiftAmount);
+            }
           } else {
-            updatedSnippet[edit.lineNumber] = 
-              [...lineText.slice(0, edit.columnNumber), ...edit.contentDelta.split(""), ...lineText.slice(edit.columnNumber)];
+            // insertion
+            newString =
+              oldString.slice(0, editOffset) +
+              edit.contentDelta +
+              oldString.slice(editOffset);
+
+            // If insertion is at or before our oldCursorPos, shift cursor right
+            if (editOffset <= oldCursorPos) {
+              oldCursorPos += edit.contentDelta.length;
+            }
           }
+
+          // Convert new string -> snippet
+          const updatedSnippet = stringToSnippet(newString);
+
+          // Re-apply the local cursor via setSelectionRange after re-render
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.setSelectionRange(oldCursorPos, oldCursorPos);
+            }
+          }, 0);
 
           return updatedSnippet;
         });
-    });
-    
+      });
+      // --------- END OF SUBSCRIPTION LOGIC CHANGES -----------
     };
 
     client.activate();
