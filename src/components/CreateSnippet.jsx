@@ -8,14 +8,18 @@ function CreateSnippet() {
     e.preventDefault();
 
     // Initial CRDT content setup
-    const crdtContent = content.split("").map((char, index) => ({
-      value: char,
-      uniqueId: `${Date.now()}_${index}`,
-      isDeleted: false,
-    }));
+    // Convert content into a 2D array format for line-column representation
+    const crdtContent = content.split("\n").map((line, lineIndex) => 
+      line.split("").map((char, columnIndex) => ({
+          value: char,
+          uniqueId: `${Date.now()}_${lineIndex}_${columnIndex}`, // Unique identifier
+          lineNumber: lineIndex,
+          columnNumber: columnIndex, 
+      }))
+  );
 
     const payload = {
-      content: crdtContent
+      content: crdtContent.flat()
     };
 
     const baseUrl = import.meta.env.VITE_BASE_URL;

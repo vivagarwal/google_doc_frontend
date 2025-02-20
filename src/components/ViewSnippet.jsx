@@ -8,11 +8,11 @@ const sessionId = crypto.randomUUID();
 
 function ViewSnippet() {
   const { uniqueLink } = useParams();  // Retrieve unique link from URL
-  const [snippetData, setSnippetData] = useState("");  // Current snippet content
+  const [snippetData, setSnippetData] = useState([]);  // Current snippet content - 2d array
   const [stompClient, setStompClient] = useState(null);  // WebSocket client
   const [isEditing, setIsEditing] = useState(false);  // Edit mode toggle
   const dmp = new DiffMatchPatch();
-  const cursorRef = useRef(0);  // Stores cursor position persistently
+  const cursorRef = useRef({ line: 0, column: 0 }); // Stores cursor position persistently
   const textareaRef = useRef(null); // Reference to the textarea
 
   // Fetch snippet content from the server initially
@@ -28,7 +28,9 @@ function ViewSnippet() {
         }
 
         const data = await res.json();
-        setSnippetData(data.content);
+        // Convert List<String> to 2D character array
+        const formattedContent = data.content.map(line => line.split(""));
+        setSnippetData(formattedContent);
       } catch (err) {
         console.error("Error fetching snippet:", err.message);
       }
@@ -60,37 +62,30 @@ function ViewSnippet() {
             return;
         }
     
-        console.log("[RECEIVE]", edit.deleteOperation ? "Delete" : "Insert", "Delta:", edit.contentDelta, "Position:", edit.cursorPosition);
+        console.log("[RECEIVE]", edit.deleteOperation ? "Delete" : "Insert", "Delta:", edit.contentDelta, "Line:", edit.lineNumber, 
+                        "Column:", edit.columnNumber);
     
         setSnippetData((prevSnippet) => {
-            const textarea = textareaRef.current;
-            let prevCursorPos = textarea ? textarea.selectionStart : cursorRef.current;
-    
-            let updatedContent;
-            if (edit.deleteOperation) {
-                updatedContent = prevSnippet.slice(0, edit.cursorPosition) + prevSnippet.slice(edit.cursorPosition + edit.contentDelta.length);
-            } else {
-                updatedContent = prevSnippet.slice(0, edit.cursorPosition) + edit.contentDelta + prevSnippet.slice(edit.cursorPosition);
-            }
-    
-            // Adjust cursor position correctly
-            if (edit.deleteOperation) {
-                if (edit.cursorPosition < prevCursorPos) {
-                    prevCursorPos -= edit.contentDelta.length;
-                }
-            } else {
-                if (edit.cursorPosition <= prevCursorPos) {
-                    prevCursorPos += edit.contentDelta.length;
-                }
-            }
-    
-            cursorRef.current = Math.max(0, prevCursorPos);
-    
-            setTimeout(() => {
-                if (textarea) textarea.setSelectionRange(cursorRef.current, cursorRef.current);
-            }, 0);
-    
-            return updatedContent;
+
+          let updatedSnippet = [...prevSnippet];
+          // Ensure line exists before modifying it
+          while (updatedSnippet.length <= edit.lineNumber) {
+            updatedSnippet.push([]);
+          }
+          let lineText = updatedSnippet[edit.lineNumber];
+
+          if (edit.deleteOperation) {
+            updatedSnippet[edit.lineNumber] = 
+            lineText.slice(0, edit.columnNumber) + 
+            lineText.slice(edit.columnNumber + edit.contentDelta.length);
+          } else {
+            updatedSnippet[edit.lineNumber] = 
+              lineText.slice(0, edit.columnNumber) + 
+              edit.contentDelta + 
+              lineText.slice(edit.columnNumber);
+          }
+
+          return updatedSnippet
         });
     });
     
@@ -112,48 +107,65 @@ function ViewSnippet() {
   // Handle content change and broadcast the updates
   const handleContentChange = (e) => {
     const updatedContent = e.target.value;
-    const cursorPos = e.target.selectionStart; // Capture cursor position
-    cursorRef.current = cursorPos;  // Store cursor position before updating state
+    const cursorPosStringed = e.target.selectionStart; // Capture cursor position
+
+    let line = 0, column = cursorPosStringed;
+    const lines = updatedContent.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      if (column <= lines[i].length) {
+        line = i;
+        break;
+      }
+      column -= lines[i].length + 1;
+    }
+
+    // Ensure column starts at 0 for new lines
+    column = Math.max(0, column);
+    cursorRef.current = { line, column }; // Store cursor position before updating state
     console.log(cursorRef);
+
     // Calculate the diff between previous and updated content
-    const diffs = dmp.diff_main(snippetData, updatedContent);
+    const diffs = dmp.diff_main(snippetData.map(l => l.join("")).join("\n"), updatedContent);
     dmp.diff_cleanupSemantic(diffs);
 
     let delta = '';
     let deleteOperation = false;
-    let adjustedCursorPos = cursorPos; // Default cursor position
+    let adjustedColumn = column;
 
     diffs.forEach(([op, text]) => {
-        if (op === 1) {  // Insert operation
+        if (op === 1) {
             delta += text;
-            adjustedCursorPos = cursorPos - 1; // Fix insert position
-        } else if (op === -1) { // Delete operation
+            adjustedColumn = column - 1; // Fix insert position
+        } else if (op === -1) {
             delta += text;
             deleteOperation = true;
-            adjustedCursorPos = cursorPos; // Fix delete position
+            adjustedColumn = column; // Fix delete position
         }
     });
 
     if (delta.length > 0) {
-        console.log(deleteOperation ? "[SEND DELETE]" : "[SEND INSERT]", "Delta:", delta, "Position:", adjustedCursorPos);
-        console.log("Updated content:", updatedContent);
-        
-        if (stompClient && stompClient.connected) {
-            stompClient.publish({
-                destination: `/app/snippets/edit-delta/${uniqueLink}`,
-                body: JSON.stringify({
-                    contentDelta: delta,
-                    cursorPosition: adjustedCursorPos, // Corrected cursor position
-                    sessionId: sessionId,
-                    deleteOperation: deleteOperation,
-                }),
-            });
-        } else {
-            console.error(`[WebSocket Error] Unable to send message. STOMP client not connected.`);
-        }
+      console.log(deleteOperation ? "[SEND DELETE]" : "[SEND INSERT]", 
+                  "Delta:", delta, "Line:", line, "Column:", adjustedColumn);
+      console.log("Updated content:", updatedContent);
+
+      if (stompClient && stompClient.connected) {
+        stompClient.publish({
+            destination: `/app/snippets/edit-delta/${uniqueLink}`,
+            body: JSON.stringify({
+                contentDelta: delta,
+                lineNumber: line,
+                columnNumber: adjustedColumn, // Corrected column position
+                sessionId: sessionId,
+                deleteOperation: deleteOperation,
+            }),
+        });
+      } else {
+          console.error(`[WebSocket Error] Unable to send message OR STOMP client not connected.`);
+      }
     }
 
-    setSnippetData(updatedContent);
+    setSnippetData(updatedContent.split("\n").map(line => [...line]));
 };
   
   // **Save updated snippet to the backend**
@@ -185,7 +197,9 @@ function ViewSnippet() {
       {!isEditing ? (
         <>
           <div className="bg-gray-100 p-4 rounded-md overflow-auto">
-            <p className="whitespace-pre-wrap text-gray-800">{snippetData}</p>
+            <p className="whitespace-pre-wrap text-gray-800">
+              {snippetData.map(line => line.join("")).join("\n")}
+            </p>
           </div>
           <button
             onClick={handleEditToggle}
@@ -198,7 +212,7 @@ function ViewSnippet() {
         <>
           <textarea
             ref={textareaRef} // Attach ref to the textarea
-            value={snippetData}
+            value={snippetData.map(line => line.join("")).join("\n")}
             onChange={handleContentChange}
             className="w-full h-40 p-3 border border-gray-300 rounded-md"
             placeholder="Edit your snippet here..."
