@@ -75,17 +75,15 @@ function ViewSnippet() {
           let lineText = updatedSnippet[edit.lineNumber];
 
           if (edit.deleteOperation) {
+            let deleteEndIndex = Math.min(edit.columnNumber + edit.contentDelta.length, lineText.length); // Fix: Prevent out-of-bounds delete
             updatedSnippet[edit.lineNumber] = 
-            lineText.slice(0, edit.columnNumber) + 
-            lineText.slice(edit.columnNumber + edit.contentDelta.length);
+              [...lineText.slice(0, edit.columnNumber), ...lineText.slice(deleteEndIndex)];
           } else {
             updatedSnippet[edit.lineNumber] = 
-              lineText.slice(0, edit.columnNumber) + 
-              edit.contentDelta + 
-              lineText.slice(edit.columnNumber);
+              [...lineText.slice(0, edit.columnNumber), ...edit.contentDelta.split(""), ...lineText.slice(edit.columnNumber)];
           }
 
-          return updatedSnippet
+          return updatedSnippet;
         });
     });
     
@@ -198,7 +196,7 @@ function ViewSnippet() {
         <>
           <div className="bg-gray-100 p-4 rounded-md overflow-auto">
             <p className="whitespace-pre-wrap text-gray-800">
-              {snippetData.map(line => line.join("")).join("\n")}
+            {snippetData.map(line => line.join("")).join("\n")}
             </p>
           </div>
           <button
