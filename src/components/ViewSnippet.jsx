@@ -12,6 +12,7 @@ function ViewSnippet() {
   const [stompClient, setStompClient] = useState(null);  // WebSocket client
   const [isEditing, setIsEditing] = useState(false);  // Edit mode toggle
   const dmp = new DiffMatchPatch();
+  const snippetRef = useRef([]); // Always holds the latest data
   const cursorRef = useRef({ line: 0, column: 0 }); // Stores cursor position persistently
   const textareaRef = useRef(null); // Reference to the textarea
 
@@ -23,6 +24,11 @@ function ViewSnippet() {
   // Helper to convert single string -> snippetData (2D)
   const stringToSnippet = (text) => {
     return text.split("\n").map(line => [...line]);
+  };
+
+  const updateSnippetData = (updatedSnippet) => {
+    snippetRef.current = updatedSnippet;  // Store latest state
+    setSnippetData(updatedSnippet);       // Triggers re-render
   };
 
   // Helper to find the 1D offset in "fullText" that corresponds to (edit.lineNumber, edit.columnNumber)
@@ -51,7 +57,7 @@ function ViewSnippet() {
         const data = await res.json();
         // Convert List<String> to 2D character array
         const formattedContent = data.content.map(line => line.split(""));
-        setSnippetData(formattedContent);
+        updateSnippetData(formattedContent);
       } catch (err) {
         console.error("Error fetching snippet:", err.message);
       }
@@ -88,63 +94,70 @@ function ViewSnippet() {
                     "Delta:", edit.contentDelta, "Line:", edit.lineNumber,
                     "Column:", edit.columnNumber);
 
-        setSnippetData((prevSnippet) => {
-          // Convert old snippet -> string
-          const oldString = snippetToString(prevSnippet);
+        let latestSnippet = snippetRef.current; // Get the latest version from snippetRef
 
-          // If the user has a selection, get the old cursor offset
-          // Otherwise default to 0
-          let oldCursorPos = 0;
+        // Convert old snippet -> string
+        const oldString = snippetToString(latestSnippet);
+
+        if (edit.contentDelta === "\n") {
+          if (edit.deleteOperation)
+          {
+            edit.lineNumber = edit.lineNumber-1;
+          }
+        }
+
+        // If the user has a selection, get the old cursor offset
+        // Otherwise default to 0
+        let oldCursorPos = 0;
+        if (textareaRef.current) {
+          oldCursorPos = textareaRef.current.selectionStart;
+        }
+
+        // Where does this remote edit happen (in 1D) ?
+        const editOffset = computeOffset(latestSnippet, edit.lineNumber, edit.columnNumber);
+
+        let newString;
+        if (edit.deleteOperation) {
+          // delete 'edit.contentDelta.length' characters starting at editOffset
+          // but clamp to avoid out-of-bounds
+          const deleteCount = Math.min(edit.contentDelta.length, oldString.length - editOffset);
+          newString =
+            oldString.slice(0, editOffset) +
+            oldString.slice(editOffset + deleteCount);
+
+          // If the edit offset is strictly before our cursor, shift cursor left
+          if (editOffset < oldCursorPos) {
+            let shiftAmount = deleteCount;
+            // If oldCursorPos is within the deleted range, clamp it
+            if (oldCursorPos < editOffset + deleteCount) {
+              shiftAmount = oldCursorPos - editOffset;
+            }
+            oldCursorPos = Math.max(editOffset, oldCursorPos - shiftAmount);
+          }
+        } else {
+          // insertion
+          newString =
+            oldString.slice(0, editOffset) +
+            edit.contentDelta +
+            oldString.slice(editOffset);
+
+          // If insertion is at or before our oldCursorPos, shift cursor right
+          if (editOffset <= oldCursorPos) {
+            oldCursorPos += edit.contentDelta.length;
+          }
+        }
+
+        // Convert new string -> snippet
+        const updatedSnippet = stringToSnippet(newString);
+
+        updateSnippetData(updatedSnippet);
+
+        // Re-apply the local cursor via setSelectionRange after re-render
+        setTimeout(() => {
           if (textareaRef.current) {
-            oldCursorPos = textareaRef.current.selectionStart;
+            textareaRef.current.setSelectionRange(oldCursorPos, oldCursorPos);
           }
-
-          // Where does this remote edit happen (in 1D) ?
-          const editOffset = computeOffset(prevSnippet, edit.lineNumber, edit.columnNumber);
-
-          let newString;
-          if (edit.deleteOperation) {
-            // delete 'edit.contentDelta.length' characters starting at editOffset
-            // but clamp to avoid out-of-bounds
-            const deleteCount = Math.min(edit.contentDelta.length, oldString.length - editOffset);
-            newString =
-              oldString.slice(0, editOffset) +
-              oldString.slice(editOffset + deleteCount);
-
-            // If the edit offset is strictly before our cursor, shift cursor left
-            if (editOffset < oldCursorPos) {
-              let shiftAmount = deleteCount;
-              // If oldCursorPos is within the deleted range, clamp it
-              if (oldCursorPos < editOffset + deleteCount) {
-                shiftAmount = oldCursorPos - editOffset;
-              }
-              oldCursorPos = Math.max(editOffset, oldCursorPos - shiftAmount);
-            }
-          } else {
-            // insertion
-            newString =
-              oldString.slice(0, editOffset) +
-              edit.contentDelta +
-              oldString.slice(editOffset);
-
-            // If insertion is at or before our oldCursorPos, shift cursor right
-            if (editOffset <= oldCursorPos) {
-              oldCursorPos += edit.contentDelta.length;
-            }
-          }
-
-          // Convert new string -> snippet
-          const updatedSnippet = stringToSnippet(newString);
-
-          // Re-apply the local cursor via setSelectionRange after re-render
-          setTimeout(() => {
-            if (textareaRef.current) {
-              textareaRef.current.setSelectionRange(oldCursorPos, oldCursorPos);
-            }
-          }, 0);
-
-          return updatedSnippet;
-        });
+        }, 0);
       });
       // --------- END OF SUBSCRIPTION LOGIC CHANGES -----------
     };
@@ -255,7 +268,7 @@ function ViewSnippet() {
       }
     }
 
-    setSnippetData(updatedContent.split("\n").map(line => [...line]));
+    updateSnippetData(updatedContent.split("\n").map(line => [...line]));
 };
   
   // **Save updated snippet to the backend**
