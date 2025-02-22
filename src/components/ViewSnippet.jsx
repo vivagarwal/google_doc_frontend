@@ -78,34 +78,43 @@ function ViewSnippet() {
       // --------- ONLY SUBSCRIPTION LOGIC -----------
       client.subscribe(`/topic/snippets-delta/${uniqueLink}`, (message) => {
         const edit = JSON.parse(message.body);
-    
+
         if (edit.sessionId === sessionId) {
           console.log("Ignoring delta from this session:", edit.contentDelta);
           return;
         }
-    
-        console.log("[RECEIVE]", edit.deleteOperation ? "Delete" : "Insert", 
-                    "Delta:", edit.contentDelta, "Line:", edit.lineNumber, 
+
+        console.log("[RECEIVE]", edit.deleteOperation ? "Delete" : "Insert",
+                    "Delta:", edit.contentDelta, "Line:", edit.lineNumber,
                     "Column:", edit.columnNumber);
-        
+
         setSnippetData((prevSnippet) => {
-          // Convert old snippet -> string
           const oldString = snippetToString(prevSnippet);
 
-          // If the user has a selection, get the old cursor offset
-          // Otherwise default to 0
+          // If the user has a selection, get the old cursor offset; otherwise 0
           let oldCursorPos = 0;
           if (textareaRef.current) {
             oldCursorPos = textareaRef.current.selectionStart;
           }
 
-          // Where does this remote edit happen (in 1D) ?
+          // If the remote edit is a single "\n", replicate your local shift
+          if (edit.contentDelta === "\n") {
+            if (!edit.deleteOperation) {
+              // Local code does line-- for newline insert
+              edit.lineNumber = Math.max(0, edit.lineNumber - 1);
+            } else {
+              // Local code does line++ for newline delete
+              edit.lineNumber += 1;
+              edit.columnNumber = 0; // If you do that locally
+            }
+          }
+
+          // Where does this remote edit happen (in 1D)?
           const editOffset = computeOffset(prevSnippet, edit.lineNumber, edit.columnNumber);
 
           let newString;
           if (edit.deleteOperation) {
-            // delete 'edit.contentDelta.length' characters starting at editOffset
-            // but clamp to avoid out-of-bounds
+            // delete 'edit.contentDelta.length' chars starting at editOffset
             const deleteCount = Math.min(edit.contentDelta.length, oldString.length - editOffset);
             newString =
               oldString.slice(0, editOffset) +
@@ -114,7 +123,6 @@ function ViewSnippet() {
             // If the edit offset is strictly before our cursor, shift cursor left
             if (editOffset < oldCursorPos) {
               let shiftAmount = deleteCount;
-              // If oldCursorPos is within the deleted range, clamp it
               if (oldCursorPos < editOffset + deleteCount) {
                 shiftAmount = oldCursorPos - editOffset;
               }
@@ -136,7 +144,7 @@ function ViewSnippet() {
           // Convert new string -> snippet
           const updatedSnippet = stringToSnippet(newString);
 
-          // Re-apply the local cursor via setSelectionRange after re-render
+          // Re-apply the local cursor after re-render
           setTimeout(() => {
             if (textareaRef.current) {
               textareaRef.current.setSelectionRange(oldCursorPos, oldCursorPos);
@@ -187,6 +195,9 @@ function ViewSnippet() {
     const diffs = dmp.diff_main(snippetData.map(l => l.join("")).join("\n"), updatedContent);
     dmp.diff_cleanupSemantic(diffs);
 
+    // We'll need the old text for newline position calculation:
+    const oldText = snippetData.map(l => l.join("")).join("\n");
+
     let delta = '';
     let deleteOperation = false;
     let adjustedColumn = column;
@@ -194,11 +205,40 @@ function ViewSnippet() {
     diffs.forEach(([op, text]) => {
         if (op === 1) {
             delta += text;
-            adjustedColumn = column - 1; // Fix insert position
+            if (text === "\n") {
+              // SPECIAL CASE: single newline insertion
+              // Recompute (line, column) from the OLD text, ignoring the new text
+              // We want the position *before* the new line was added.
+              // So let's treat selectionStart - 1 as the old cursor.
+              let oldCursorPos = Math.max(0, e.target.selectionStart - 1);
+    
+              // Recompute line, col from oldText
+              let oldLine = 0, oldCol = oldCursorPos;
+              const oldLines = oldText.split("\n");
+              for (let i = 0; i < oldLines.length; i++) {
+                if (oldCol <= oldLines[i].length) {
+                  oldLine = i;
+                  break;
+                }
+                oldCol -= (oldLines[i].length + 1);
+              }
+              oldCol = Math.max(0, oldCol);
+    
+              // This is our final (line, column)
+              line = oldLine;
+              adjustedColumn = oldCol;
+            }
+            else
+            {
+              adjustedColumn = column - 1; // Fix insert position
+            }
         } else if (op === -1) {
             delta += text;
             deleteOperation = true;
             adjustedColumn = column; // Fix delete position
+            if (text === "\n") {
+              line++;
+            }
         }
     });
 
