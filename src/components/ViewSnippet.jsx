@@ -89,32 +89,23 @@ function ViewSnippet() {
                     "Column:", edit.columnNumber);
 
         setSnippetData((prevSnippet) => {
+          // Convert old snippet -> string
           const oldString = snippetToString(prevSnippet);
 
-          // If the user has a selection, get the old cursor offset; otherwise 0
+          // If the user has a selection, get the old cursor offset
+          // Otherwise default to 0
           let oldCursorPos = 0;
           if (textareaRef.current) {
             oldCursorPos = textareaRef.current.selectionStart;
           }
 
-          // If the remote edit is a single "\n", replicate your local shift
-          if (edit.contentDelta === "\n") {
-            if (!edit.deleteOperation) {
-              // Local code does line-- for newline insert
-              edit.lineNumber = Math.max(0, edit.lineNumber - 1);
-            } else {
-              // Local code does line++ for newline delete
-              edit.lineNumber += 1;
-              edit.columnNumber = 0; // If you do that locally
-            }
-          }
-
-          // Where does this remote edit happen (in 1D)?
+          // Where does this remote edit happen (in 1D) ?
           const editOffset = computeOffset(prevSnippet, edit.lineNumber, edit.columnNumber);
 
           let newString;
           if (edit.deleteOperation) {
-            // delete 'edit.contentDelta.length' chars starting at editOffset
+            // delete 'edit.contentDelta.length' characters starting at editOffset
+            // but clamp to avoid out-of-bounds
             const deleteCount = Math.min(edit.contentDelta.length, oldString.length - editOffset);
             newString =
               oldString.slice(0, editOffset) +
@@ -123,6 +114,7 @@ function ViewSnippet() {
             // If the edit offset is strictly before our cursor, shift cursor left
             if (editOffset < oldCursorPos) {
               let shiftAmount = deleteCount;
+              // If oldCursorPos is within the deleted range, clamp it
               if (oldCursorPos < editOffset + deleteCount) {
                 shiftAmount = oldCursorPos - editOffset;
               }
@@ -144,7 +136,7 @@ function ViewSnippet() {
           // Convert new string -> snippet
           const updatedSnippet = stringToSnippet(newString);
 
-          // Re-apply the local cursor after re-render
+          // Re-apply the local cursor via setSelectionRange after re-render
           setTimeout(() => {
             if (textareaRef.current) {
               textareaRef.current.setSelectionRange(oldCursorPos, oldCursorPos);
