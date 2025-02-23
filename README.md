@@ -1,8 +1,6 @@
-# React + Vite
+# Collab Doc Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Built on Vite+React
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+This is the git repository of frontend server code of collab doc project, more details of which along with documentation can be found in 
+[https://github.com/vivagarwal/collab_doc](https://github.com/vivagarwal/collab_doc)
