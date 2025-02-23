@@ -57,7 +57,7 @@ function CreateSnippet() {
   };
 
   return (
-    <div className="max-w-lg mx-auto mt-10 bg-gradient-to-b from-white to-blue-50 p-8 shadow-lg rounded-md">
+    <div className="w-full max-w-4xl mx-auto mt-10 bg-gradient-to-b from-white to-blue-50 p-8 shadow-lg rounded-md">
       <form onSubmit={handleSubmit}>
         <div className="mb-5">
           <label htmlFor="content" className="block text-gray-700 font-medium mb-2">
@@ -69,7 +69,7 @@ function CreateSnippet() {
             onChange={(e) => setContent(e.target.value)}
             placeholder="Enter your code or text here..."
             required
-            className="w-full h-32 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-[100%] h-[70vh] p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
         </div>
 

@@ -294,7 +294,7 @@ function ViewSnippet() {
   };
   
   return (
-    <div className="max-w-lg mx-auto mt-10 bg-white p-8 shadow-lg rounded-md">
+    <div className="w-full max-w-4xl mx-auto mt-10 bg-white p-8 shadow-lg rounded-md">
       <h2 className="text-3xl font-bold text-blue-700 mb-4">Snippet Editor</h2>
 
       {!isEditing ? (
@@ -317,7 +317,7 @@ function ViewSnippet() {
             ref={textareaRef} // Attach ref to the textarea
             value={snippetData.map(line => line.join("")).join("\n")}
             onChange={handleContentChange}
-            className="w-full h-40 p-3 border border-gray-300 rounded-md"
+            className="w-[100%] h-[70vh] p-3 border border-gray-300 rounded-md"
             placeholder="Edit your snippet here..."
           />
           <button

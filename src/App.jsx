@@ -9,7 +9,7 @@ function App() {
       <div className="max-w-4xl w-full bg-white shadow-lg rounded-xl p-6 md:p-10">
         <header className="text-center mb-8">
           <h1 className="text-4xl font-bold text-blue-700 mb-2">CollabDoc</h1>
-          <p className="text-gray-600">Create and share code snippets easily</p>
+          <p className="text-gray-600">Create and Collaborate on Docs Live!</p>
         </header>
 
         <BrowserRouter>
